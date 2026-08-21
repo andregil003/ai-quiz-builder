@@ -952,6 +952,25 @@
     });
   }
 
+  function checkAppVersion() {
+    if (!window.fetch) return;
+    var SEEN_KEY = 'aib_seen_version';
+    var RELOAD_KEY = 'aib_reloaded_for';
+    fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data || !data.v) return;
+        var seen = null;
+        try { seen = localStorage.getItem(SEEN_KEY); } catch (e) {}
+        try { localStorage.setItem(SEEN_KEY, data.v); } catch (e) {}
+        if (!seen || seen === data.v) return;
+        try { if (sessionStorage.getItem(RELOAD_KEY) === data.v) return; } catch (e) { return; }
+        try { sessionStorage.setItem(RELOAD_KEY, data.v); } catch (e) {}
+        location.reload();
+      })
+      .catch(function () {});
+  }
+
   loadQuizzes();
   state.cfg = loadCfg();
   applyCfgToControls();
@@ -961,4 +980,5 @@
   bindEvents();
   renderHome();
   showView('home');
+  checkAppVersion();
 })();
