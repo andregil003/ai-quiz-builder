@@ -369,8 +369,9 @@
     });
 
     var name = cleanInline(data.nombre || data.titulo || data.title || '') || 'Cuestionario sin título';
+    var category = cleanInline(data.categoria || data.categoría || data.category || '');
     if (!questions.length) warnings.push('El JSON no contenía preguntas válidas.');
-    return { name: name, questions: questions, warnings: warnings };
+    return { name: name, category: category, questions: questions, warnings: warnings };
   }
 
   function detectAndParse(raw) {

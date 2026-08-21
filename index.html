@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0f1117">
 <title>AI Quiz Builder</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%237c6cf6' d='M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8Zm-1-5h2v2h-2Zm1-9a3.5 3.5 0 0 0-3.5 3.5h2A1.5 1.5 0 1 1 12 11a1 1 0 0 0-1 1v2h2v-1.1a3.5 3.5 0 0 0-1-6.9Z'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="styles.css?v=1.4.0">
+<link rel="stylesheet" href="styles.css?v=1.5.0">
 </head>
 <body>
 <div id="app">
@@ -25,6 +25,11 @@
 
     <section class="view active" id="view-home">
       <div class="container">
+        <div class="search-wrap hidden" id="search-wrap">
+          <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19Zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14Z"/></svg>
+          <input type="text" id="search-input" placeholder="Buscar por nombre o categoría…" autocomplete="off">
+        </div>
+        <div class="no-results hidden" id="home-no-results">Sin resultados para tu búsqueda.</div>
         <div class="empty hidden" id="home-empty">
           <svg viewBox="0 0 24 24" class="empty-icon"><path d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2Zm-9 12H8v-2h2Zm0-4H8V9h2Zm4 4h-2v-2h2Zm0-4h-2V9h2Zm4 4h-2v-2h2Zm0-4h-2V9h2Z"/></svg>
           <p>Aún no tienes cuestionarios.<br>Crea uno desde un archivo .txt o con ayuda de una IA.</p>
@@ -57,6 +62,11 @@
           <h3 class="preview-title">Vista previa</h3>
           <label class="field-label" for="preview-name">Nombre del cuestionario</label>
           <input type="text" id="preview-name" maxlength="120">
+          <label class="field-label" for="preview-category">Categoría</label>
+          <div class="autocomplete">
+            <input type="text" id="preview-category" placeholder="Ej: Física, Mate, Redes…" maxlength="40" autocomplete="off">
+            <ul class="ac-list hidden" id="preview-category-ac"></ul>
+          </div>
           <div class="chips" id="preview-chips"></div>
           <div class="warnings hidden" id="preview-warnings"></div>
           <div class="row gap">
@@ -95,6 +105,12 @@
             <button type="button" data-diff="media" class="active">Media</button>
             <button type="button" data-diff="dificil">Difícil</button>
             <button type="button" data-diff="mixta">Mixta</button>
+          </div>
+
+          <label class="field-label" for="cfg-category">Categoría del cuestionario</label>
+          <div class="autocomplete">
+            <input type="text" id="cfg-category" placeholder="Ej: Física, Mate, Redes…" maxlength="40" autocomplete="off">
+            <ul class="ac-list hidden" id="cfg-category-ac"></ul>
           </div>
 
           <label class="switch-row" for="explicaciones-toggle">
@@ -193,7 +209,7 @@
 </div>
 
 <input type="file" id="file-input" accept=".txt,.md,text/plain,text/markdown" hidden>
-<script src="parser.js?v=1.4.0"></script>
-<script src="script.js?v=1.4.0"></script>
+<script src="parser.js?v=1.5.0"></script>
+<script src="script.js?v=1.5.0"></script>
 </body>
 </html>
