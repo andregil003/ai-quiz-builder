@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1117">
+<title>AI Quiz Builder</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%237c6cf6' d='M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8Zm-1-5h2v2h-2Zm1-9a3.5 3.5 0 0 0-3.5 3.5h2A1.5 1.5 0 1 1 12 11a1 1 0 0 0-1 1v2h2v-1.1a3.5 3.5 0 0 0-1-6.9Z'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <button class="icon-btn hidden" id="btn-back" aria-label="Volver">
+        <svg viewBox="0 0 24 24"><path d="M15.5 19 8.5 12l7-7 1.4 1.4L11.3 12l5.6 5.6Z"/></svg>
+      </button>
+      <h1 id="topbar-title">Mis cuestionarios</h1>
+    </div>
+    <div class="progress-track hidden" id="quiz-progress-track"><div class="progress-fill" id="quiz-progress-fill"></div></div>
+  </header>
+
+  <main id="main">
+
+    <section class="view active" id="view-home">
+      <div class="container">
+        <div class="empty hidden" id="home-empty">
+          <svg viewBox="0 0 24 24" class="empty-icon"><path d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2Zm-9 12H8v-2h2Zm0-4H8V9h2Zm4 4h-2v-2h2Zm0-4h-2V9h2Zm4 4h-2v-2h2Zm0-4h-2V9h2Z"/></svg>
+          <p>Aún no tienes cuestionarios.<br>Crea uno desde un archivo .txt o con ayuda de una IA.</p>
+          <button class="btn btn-primary" data-nav="new">Crear cuestionario</button>
+        </div>
+        <ul class="quiz-list" id="quiz-list"></ul>
+      </div>
+    </section>
+
+    <section class="view" id="view-new">
+      <div class="container">
+        <h2 class="section-title">Nuevo cuestionario</h2>
+        <p class="section-sub">Sube un archivo .txt con el formato correcto o pega aquí la respuesta de tu IA.</p>
+
+        <div class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="Subir archivo txt">
+          <svg viewBox="0 0 24 24"><path d="M19 13v5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-5H3v5a3 3 0 0 0 3 3h12a3 3 0 0 0 3-3v-5ZM11 5.83 8.41 8.41 7 7l5-5 5 5-1.41 1.41L13 5.83V16h-2Z"/></svg>
+          <strong>Toca para subir un archivo</strong>
+          <span>o arrástralo aquí (.txt / .md)</span>
+        </div>
+
+        <label class="field-label" for="paste-area">O pega el texto del cuestionario</label>
+        <textarea id="paste-area" rows="8" placeholder="Nombre del cuestionario : Mi cuestionario&#10;### **Pregunta 1**&#10;&#10;**Enunciado...**&#10;&#10;* A. Opción&#10;* **B. Opción correcta** *(Correcta)*&#10;&#10;---"></textarea>
+
+        <div class="row gap">
+          <button class="btn btn-primary grow" id="btn-parse">Procesar texto</button>
+          <button class="btn btn-ghost" id="btn-clear-paste">Limpiar</button>
+        </div>
+
+        <div class="preview hidden" id="preview-panel">
+          <h3 class="preview-title">Vista previa</h3>
+          <label class="field-label" for="preview-name">Nombre del cuestionario</label>
+          <input type="text" id="preview-name" maxlength="120">
+          <div class="chips" id="preview-chips"></div>
+          <div class="warnings hidden" id="preview-warnings"></div>
+          <div class="row gap">
+            <button class="btn btn-primary grow" id="btn-save-quiz">Guardar</button>
+            <button class="btn btn-secondary grow" id="btn-save-start">Guardar y comenzar</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="view-ai">
+      <div class="container">
+        <h2 class="section-title">Generar con IA</h2>
+        <p class="section-sub">Copia el prompt, pégalo en tu IA favorita junto con tu material de estudio, y trae la respuesta de vuelta para crear el cuestionario.</p>
+
+        <button class="btn btn-primary btn-lg btn-block" id="btn-copy-prompt">
+          <svg viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12Zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 16H8V7h11Z"/></svg>
+          Copiar prompt
+        </button>
+
+        <div class="ai-dropdown" id="ai-dropdown">
+          <button class="btn btn-secondary btn-block" id="ai-toggle" aria-haspopup="listbox" aria-expanded="false">
+            <svg viewBox="0 0 24 24"><path d="m12 2 2.4 5.4L20 9l-4 4.4.7 6.1L12 16.9 7.3 19.5 8 13.4 4 9l5.6-1.6Z"/></svg>
+            Elegir IA y abrir
+            <svg class="chev" viewBox="0 0 24 24"><path d="M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6Z"/></svg>
+          </button>
+          <ul class="ai-menu hidden" id="ai-menu" role="listbox"></ul>
+        </div>
+
+        <ol class="steps">
+          <li>Copia el prompt con el botón de arriba.</li>
+          <li>Abre tu IA desde el desplegable (el prompt se copia automáticamente).</li>
+          <li>Pega el prompt + tu material y espera la respuesta.</li>
+          <li>Vuelve a la app, ve a <strong>Nuevo</strong> y pega la respuesta.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="view" id="view-quiz">
+      <div class="container">
+        <div class="quiz-head">
+          <span class="quiz-counter" id="quiz-counter">1 / 10</span>
+          <span class="quiz-score-pill" id="quiz-live-score">0 pts</span>
+        </div>
+        <article class="card question-card" id="question-card"></article>
+        <div class="feedback hidden" id="feedback-box"></div>
+        <div class="quiz-actions" id="quiz-actions">
+          <button class="btn btn-ghost" id="btn-reveal">Revelar respuesta</button>
+          <button class="btn btn-primary grow" id="btn-check" disabled>Comprobar</button>
+        </div>
+        <div class="quiz-nav">
+          <button class="btn nav-arrow" id="btn-prev" aria-label="Anterior">
+            <svg viewBox="0 0 24 24"><path d="M15.5 19 8.5 12l7-7 1.4 1.4L11.3 12l5.6 5.6Z"/></svg>
+          </button>
+          <button class="btn btn-primary grow" id="btn-next">Siguiente</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="view-result">
+      <div class="container">
+        <div class="result-hero card">
+          <div class="score-ring" id="score-ring"><div class="score-ring-inner"><span id="score-num">0/0</span><small id="score-pct">0%</small></div></div>
+          <h2 id="result-msg">¡Listo!</h2>
+          <p class="result-detail" id="result-detail"></p>
+        </div>
+        <h3 class="section-title">Revisión</h3>
+        <div id="review-list"></div>
+        <div class="row gap result-actions">
+          <button class="btn btn-secondary grow" id="btn-retry">Repetir</button>
+          <button class="btn btn-primary grow" id="btn-home">Inicio</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="bottomnav" id="bottomnav">
+    <button data-nav="home" class="active">
+      <svg viewBox="0 0 24 24"><path d="M12 3 2 12h3v8h6v-6h2v6h6v-8h3Z"/></svg>
+      <span>Inicio</span>
+    </button>
+    <button data-nav="new">
+      <svg viewBox="0 0 24 24"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6Z"/></svg>
+      <span>Nuevo</span>
+    </button>
+    <button data-nav="ai">
+      <svg viewBox="0 0 24 24"><path d="m12 2 2.4 5.4L20 9l-4 4.4.7 6.1L12 16.9 7.3 19.5 8 13.4 4 9l5.6-1.6Z"/></svg>
+      <span>IA</span>
+    </button>
+  </nav>
+
+  <div class="toast" id="toast" role="status"></div>
+</div>
+
+<input type="file" id="file-input" accept=".txt,.md,text/plain,text/markdown" hidden>
+<script src="parser.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
