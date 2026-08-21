@@ -7,6 +7,18 @@
   var BLANK_ITEM_RE = /^\s*BLANK[-_ ]?(\d+)\s*[:\-]?\s*(.*)$/i;
   var CORRECT_RE = /\(\s*correcta/i;
   var HEADER_RE = /^[ \t]*(?:#{1,4}\s*)?(?:\*\*)?\s*Pregunta\s*\d+(?:\*\*)?\s*:?\s*$/i;
+  var EXPL_LABEL_RE = /^\s*\*{0,2}\s*explicaci[oó]n\s*\*{0,2}\s*:/i;
+
+  function pickExpl(obj) {
+    var e = '';
+    if (obj && typeof obj === 'object') {
+      if (obj.explicacion != null) e = obj.explicacion;
+      else if (obj['explicación'] != null) e = obj['explicación'];
+      else if (obj.explanation != null) e = obj.explanation;
+      else if (obj.justificacion != null) e = obj.justificacion;
+    }
+    return cleanInline(e);
+  }
 
   function cleanInline(s) {
     return String(s == null ? '' : s)
@@ -127,6 +139,7 @@
     var groups = [];
     var currentGroup = null;
     var paraBuffer = [];
+    var explLines = [];
 
     function flushPara() {
       if (paraBuffer.length) {
@@ -139,6 +152,12 @@
       var line = lines[i];
       if (!line.trim()) { flushPara(); continue; }
       if (/^\s*-{3,}\s*$/.test(line)) { flushPara(); continue; }
+      if (EXPL_LABEL_RE.test(line)) {
+        flushPara();
+        currentGroup = null;
+        explLines.push(line.replace(/^[^:]*:\s*/, '').replace(/\*\*/g, '').trim());
+        continue;
+      }
       if (isItemLine(line)) {
         flushPara();
         if (!currentGroup) { currentGroup = []; groups.push(currentGroup); }
@@ -184,6 +203,7 @@
     if (!qText && !optionsGroup && !blanksGroup) return null;
 
     var question = { type: 'single', text: qText || ('Pregunta ' + (index + 1)), options: [], blanks: [], sentenceParts: [] };
+    if (explLines.length) question.explicacion = cleanInline(explLines.join(' '));
 
     if (blanksGroup) {
       question.type = 'blanks';
@@ -310,13 +330,16 @@
           warnings.push('Pregunta ' + (questions.length + 1) + ': completar espacios sin respuestas, se omitió.');
           return;
         }
-        questions.push({
+        var jq = {
           type: 'blanks',
           text: enun,
           options: [],
           blanks: answers,
           sentenceParts: tok.parts.length > 1 ? tok.parts : []
-        });
+        };
+        var jex1 = pickExpl(it);
+        if (jex1) jq.explicacion = jex1;
+        questions.push(jq);
         return;
       }
 
@@ -339,7 +362,10 @@
       if (cc === 0) {
         warnings.push('Pregunta ' + (questions.length + 1) + ': sin respuesta correcta marcada.');
       }
-      questions.push({ type: cc > 1 ? 'multiple' : 'single', text: enun || ('Pregunta ' + (questions.length + 1)), options: opts, blanks: [], sentenceParts: [] });
+      var jq2 = { type: cc > 1 ? 'multiple' : 'single', text: enun || ('Pregunta ' + (questions.length + 1)), options: opts, blanks: [], sentenceParts: [] };
+      var jex2 = pickExpl(it);
+      if (jex2) jq2.explicacion = jex2;
+      questions.push(jq2);
     });
 
     var name = cleanInline(data.nombre || data.titulo || data.title || '') || 'Cuestionario sin título';

@@ -72,6 +72,46 @@
         <h2 class="section-title">Generar con IA</h2>
         <p class="section-sub">Copia el prompt, pégalo en tu IA favorita junto con tu material de estudio, y trae la respuesta de vuelta para crear el cuestionario.</p>
 
+        <div class="card cfg-card">
+          <h3 class="cfg-title">Personaliza tu prompt</h3>
+
+          <div class="field-label">Número de preguntas</div>
+          <div class="stepper">
+            <button type="button" id="q-minus" aria-label="Menos">−</button>
+            <input type="number" id="q-count" min="5" max="50" value="20" inputmode="numeric">
+            <button type="button" id="q-plus" aria-label="Más">+</button>
+          </div>
+
+          <div class="field-label">Tipos de pregunta</div>
+          <div class="chips-toggles" id="type-chips">
+            <button type="button" class="chip-toggle active" data-type="single">Opción múltiple (1 respuesta)</button>
+            <button type="button" class="chip-toggle active" data-type="multiple">Varias respuestas</button>
+            <button type="button" class="chip-toggle active" data-type="blanks">Completar espacios</button>
+          </div>
+
+          <div class="field-label">Dificultad</div>
+          <div class="segmented" id="difficulty-seg">
+            <button type="button" data-diff="facil">Fácil</button>
+            <button type="button" data-diff="media" class="active">Media</button>
+            <button type="button" data-diff="dificil">Difícil</button>
+            <button type="button" data-diff="mixta">Mixta</button>
+          </div>
+
+          <label class="switch-row" for="explicaciones-toggle">
+            <span>Incluir explicaciones en las respuestas</span>
+            <input type="checkbox" id="explicaciones-toggle" checked>
+            <span class="switch"></span>
+          </label>
+
+          <label class="field-label" for="extra-notes">Notas extra (opcional)</label>
+          <textarea id="extra-notes" rows="2" placeholder="Ej: Enfocado solo en el parcial 2, con casos prácticos…"></textarea>
+        </div>
+
+        <details class="prompt-preview">
+          <summary>Ver prompt (se actualiza solo)</summary>
+          <pre id="prompt-preview-text"></pre>
+        </details>
+
         <button class="btn btn-primary btn-lg btn-block" id="btn-copy-prompt">
           <svg viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12Zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 16H8V7h11Z"/></svg>
           Copiar prompt

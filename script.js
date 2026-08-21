@@ -11,55 +11,151 @@
     { name: 'Kimi', url: 'https://www.kimi.com/', color: '#8b5cf6' }
   ];
 
-  var AI_PROMPT = [
-    'Actúa como un creador experto de cuestionarios de estudio. Voy a darte material de estudio y debes generar un cuestionario de opción múltiple devuelto EXCLUSIVAMENTE como JSON válido.',
-    '',
-    'TU RESPUESTA DEBE SER: únicamente el objeto JSON, empezando con { y terminando con }. Sin explicaciones, sin introducciones, sin despedidas, sin texto antes ni después.',
-    '',
-    'ESQUEMA EXACTO (ejemplo de estructura):',
-    '',
-    '{',
-    '  "nombre": "Título del cuestionario",',
-    '  "preguntas": [',
-    '    {',
-    '      "tipo": "opcion_multiple",',
-    '      "enunciado": "Enunciado de la pregunta",',
-    '      "opciones": [',
-    '        { "texto": "Opción incorrecta", "correcta": false },',
-    '        { "texto": "Opción correcta", "correcta": true },',
-    '        { "texto": "Otra opción incorrecta", "correcta": false }',
-    '      ]',
-    '    },',
-    '    {',
-    '      "tipo": "completar",',
-    '      "enunciado": "Complete los espacios en blanco:",',
-    '      "frase": "Frase con la [palabra1] a completar y otra [palabra2].",',
-    '      "respuestas": ["palabra1", "palabra2"]',
-    '    }',
-    '  ]',
-    '}',
-    '',
-    'REGLAS OBLIGATORIAS:',
-    '1. Devuelve SOLO el objeto JSON válido. Nada más.',
-    '2. "nombre": título corto del cuestionario.',
-    '3. Todas las preguntas van dentro del arreglo "preguntas".',
-    '4. Tipo "opcion_multiple": campo "opciones" con entre 3 y 6 objetos {texto, correcta}. Usa comillas dobles en todas las claves y valores.',
-    '5. Preguntas de una sola respuesta correcta: exactamente una opción con "correcta": true.',
-    '6. Preguntas de varias respuestas correctas: dos o más opciones con "correcta": true.',
-    '7. Tipo "completar": la "frase" contiene las respuestas entre corchetes [así], y el arreglo "respuestas" lista cada respuesta en el MISMO orden, sin corchetes.',
-    '8. Mezcla los tipos: mayoría de opción múltiple con 1 sola correcta, varias con 2 o más correctas, y 2 o 3 de completar espacios.',
-    '9. Genera entre 15 y 40 preguntas cubriendo TODO el material de forma equilibrada.',
-    '10. Los distractores deben ser plausibles y coherentes con el material.',
-    '11. No agregues comentarios, ni claves fuera del esquema, ni bloques de código markdown.',
-    '',
-    'MATERIAL DE ESTUDIO:',
-    '[PEGA AQUÍ TU MATERIAL O ADJUNTA LOS ARCHIVOS]'
-  ].join('\n');
+  var CFG_KEY = 'ai_quiz_builder_prompt_cfg_v1';
+
+  var DIFF_TEXT = {
+    facil: 'Nivel de dificultad FÁCIL: preguntas de memorización y reconocimiento directo de conceptos, definiciones y datos explícitos del material.',
+    media: 'Nivel de dificultad MEDIA: preguntas de comprensión y aplicación de conceptos a situaciones sencillas.',
+    dificil: 'Nivel de dificultad DIFÍCIL: preguntas de análisis y resolución de casos que exijan razonamiento; las opciones incorrectas deben ser muy similares entre sí.',
+    mixta: 'Nivel de dificultad MIXTO: combina preguntas fáciles de reconocimiento, medias de aplicación y difíciles de análisis, en proporciones similares.'
+  };
+
+  var defaultCfg = {
+    count: 20,
+    types: { single: true, multiple: true, blanks: true },
+    difficulty: 'media',
+    explicaciones: true,
+    notas: ''
+  };
+
+  function buildPrompt(cfg) {
+    var L = [];
+    L.push('Actúa como un creador experto de cuestionarios de estudio. Voy a darte material de estudio y debes generar un cuestionario devuelto EXCLUSIVAMENTE como JSON válido.');
+    L.push('');
+    L.push('TU RESPUESTA DEBE SER: únicamente el objeto JSON, empezando con { y terminando con }. Sin explicaciones envolventes, sin introducciones, sin despedidas, sin texto antes ni después.');
+    L.push('');
+
+    var examples = [];
+    var exMulti = [
+      '    {',
+      '      "tipo": "opcion_multiple",',
+      '      "enunciado": "Enunciado de la pregunta",',
+      '      "opciones": [',
+      '        { "texto": "Opción incorrecta", "correcta": false },',
+      '        { "texto": "Opción correcta", "correcta": true },',
+      '        { "texto": "Otra opción incorrecta", "correcta": false }',
+      '      ]' + (cfg.explicaciones ? ',' : '')
+    ];
+    if (cfg.explicaciones) exMulti.push('      "explicacion": "Breve justificación de por qué la respuesta correcta lo es"');
+    exMulti.push('    }');
+    examples.push(exMulti.join('\n'));
+
+    if (cfg.types.blanks) {
+      var exBlanks = [
+        '    {',
+        '      "tipo": "completar",',
+        '      "enunciado": "Complete los espacios en blanco:",',
+        '      "frase": "Frase con la [palabra1] a completar y otra [palabra2].",',
+        '      "respuestas": ["palabra1", "palabra2"]' + (cfg.explicaciones ? ',' : '')
+      ];
+      if (cfg.explicaciones) exBlanks.push('      "explicacion": "Breve justificación"');
+      exBlanks.push('    }');
+      examples.push(exBlanks.join('\n'));
+    }
+
+    L.push('ESQUEMA EXACTO (ejemplo de estructura):');
+    L.push('');
+    L.push('{');
+    L.push('  "nombre": "Título del cuestionario",');
+    L.push('  "preguntas": [');
+    L.push(examples.join(',\n'));
+    L.push('  ]');
+    L.push('');
+    L.push('REGLAS OBLIGATORIAS:');
+
+    var n = 1;
+    function rule(t) { L.push(n + '. ' + t); n++; }
+
+    rule('Devuelve SOLO el objeto JSON válido. Nada más.');
+    rule('"nombre": título corto del cuestionario.');
+    rule('Todas las preguntas van dentro del arreglo "preguntas".');
+    if (cfg.types.single || cfg.types.multiple) {
+      rule('Tipo "opcion_multiple": campo "opciones" con entre 3 y 6 objetos {texto, correcta}. Usa comillas dobles en todas las claves y valores.');
+    }
+    if (cfg.types.single && cfg.types.multiple) {
+      rule('Preguntas de una sola respuesta correcta: exactamente una opción con "correcta": true.');
+      rule('Preguntas de varias respuestas correctas: dos o más opciones con "correcta": true.');
+    } else if (cfg.types.single) {
+      rule('Todas las preguntas de opción múltiple deben tener exactamente UNA opción con "correcta": true.');
+    } else if (cfg.types.multiple) {
+      rule('Todas las preguntas deben tener DOS o MÁS opciones con "correcta": true.');
+    }
+    if (cfg.types.blanks) {
+      rule('Tipo "completar": la "frase" contiene las respuestas entre corchetes [así], y el arreglo "respuestas" lista cada respuesta en el MISMO orden, sin corchetes.');
+    }
+
+    var active = [];
+    if (cfg.types.single) active.push('opción múltiple con 1 sola respuesta correcta');
+    if (cfg.types.multiple) active.push('preguntas con 2 o más respuestas correctas');
+    if (cfg.types.blanks) active.push('de completar espacios');
+    if (active.length > 1) {
+      rule('Mezcla los tipos: incluye ' + active.join(', ') + '.');
+    } else {
+      rule('TODAS las preguntas deben ser ' + active[0] + '.');
+    }
+
+    rule('Genera EXACTAMENTE ' + cfg.count + ' preguntas cubriendo el material de forma equilibrada.');
+    rule(DIFF_TEXT[cfg.difficulty]);
+    if (cfg.explicaciones) {
+      rule('Cada pregunta debe incluir la clave "explicacion": texto breve (1 o 2 frases) que justifique por qué la respuesta correcta es correcta.');
+    }
+    rule('Los distractores deben ser plausibles y coherentes con el material.' + (cfg.difficulty === 'dificil' ? ' En este nivel deben ser muy similares entre sí.' : ''));
+    rule('No agregues comentarios, ni claves fuera del esquema, ni bloques de código markdown.');
+
+    if (cfg.notas && cfg.notas.trim()) {
+      L.push('');
+      L.push('INSTRUCCIONES ADICIONALES DEL USUARIO (cúmplelas obligatoriamente):');
+      L.push(cfg.notas.trim());
+    }
+
+    L.push('');
+    L.push('MATERIAL DE ESTUDIO:');
+    L.push('[PEGA AQUÍ TU MATERIAL O ADJUNTA LOS ARCHIVOS]');
+    return L.join('\n');
+  }
+
+  function loadCfg() {
+    var cfg = JSON.parse(JSON.stringify(defaultCfg));
+    try {
+      var raw = localStorage.getItem(CFG_KEY);
+      if (raw) {
+        var saved = JSON.parse(raw);
+        if (saved && typeof saved === 'object') {
+          if (Number.isFinite(saved.count)) cfg.count = Math.min(50, Math.max(5, Math.round(saved.count)));
+          if (saved.types && typeof saved.types === 'object') {
+            ['single', 'multiple', 'blanks'].forEach(function (k) {
+              if (typeof saved.types[k] === 'boolean') cfg.types[k] = saved.types[k];
+            });
+          }
+          if (DIFF_TEXT[saved.difficulty]) cfg.difficulty = saved.difficulty;
+          if (typeof saved.explicaciones === 'boolean') cfg.explicaciones = saved.explicaciones;
+          if (typeof saved.notas === 'string') cfg.notas = saved.notas;
+        }
+      }
+    } catch (e) {}
+    if (!cfg.types.single && !cfg.types.multiple && !cfg.types.blanks) cfg.types.single = true;
+    return cfg;
+  }
+
+  function saveCfg() {
+    try { localStorage.setItem(CFG_KEY, JSON.stringify(state.cfg)); } catch (e) {}
+  }
 
   var state = {
     quizzes: [],
     session: null,
-    pendingQuiz: null
+    pendingQuiz: null,
+    cfg: defaultCfg
   };
 
   function loadQuizzes() {
@@ -506,6 +602,7 @@
       } else {
         box.innerHTML = 'Incorrecto.<small>La(s) respuesta(s) correcta(s): ' + fd.correctLabels.join(', ') + '</small>';
       }
+      if (q.explicacion) box.innerHTML += '<span class="fb-expl">' + rich(q.explicacion) + '</span>';
     } else if (revealed) {
       box.className = 'feedback reveal';
       if (q.type === 'blanks') {
@@ -515,6 +612,7 @@
         q.options.forEach(function (op, oi) { if (op.correct) labels.push(optionLabel(q, oi)); });
         box.innerHTML = 'Respuesta correcta: ' + labels.join(', ') + '<small>Esta pregunta no suma puntos.</small>';
       }
+      if (q.explicacion) box.innerHTML += '<span class="fb-expl">' + rich(q.explicacion) + '</span>';
     } else {
       box.classList.add('hidden');
     }
@@ -630,6 +728,7 @@
         }
         body += 'Correctas: <b class="right">' + esc(corrLabels.join(', ')) + '</b>';
       }
+      if (q.explicacion) body += '<span class="review-expl">Explicación: ' + rich(q.explicacion) + '</span>';
       div.innerHTML =
         '<div class="review-head">' +
           '<span class="review-badge ' + badgeCls + '">' + badgeTxt + '</span>' +
@@ -679,13 +778,81 @@
 
   async function copyPromptAndOpen(url, aiName) {
     try {
-      await copyText(AI_PROMPT);
+      await copyText(buildPrompt(state.cfg));
       toast('Texto copiado · Abriendo ' + aiName + '…');
       toggleAiMenu(false);
       setTimeout(function () { window.open(url, '_blank', 'noopener'); }, 450);
     } catch (e) {
       toast('No se pudo copiar automáticamente');
     }
+  }
+
+  function applyCfgToControls() {
+    $('#q-count').value = state.cfg.count;
+    document.querySelectorAll('#type-chips .chip-toggle').forEach(function (ch) {
+      ch.classList.toggle('active', !!state.cfg.types[ch.dataset.type]);
+    });
+    document.querySelectorAll('#difficulty-seg button').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.diff === state.cfg.difficulty);
+    });
+    $('#explicaciones-toggle').checked = state.cfg.explicaciones;
+    $('#extra-notes').value = state.cfg.notas;
+  }
+
+  function updatePromptPreview() {
+    var el = $('#prompt-preview-text');
+    if (el) el.textContent = buildPrompt(state.cfg);
+  }
+
+  function setCfgCount(v) {
+    state.cfg.count = Math.min(50, Math.max(5, Math.round(Number(v) || 20)));
+    $('#q-count').value = state.cfg.count;
+    saveCfg();
+    updatePromptPreview();
+  }
+
+  function bindCfgEvents() {
+    $('#q-minus').addEventListener('click', function () { setCfgCount(state.cfg.count - 1); });
+    $('#q-plus').addEventListener('click', function () { setCfgCount(state.cfg.count + 1); });
+    $('#q-count').addEventListener('change', function () { setCfgCount(this.value); });
+
+    document.querySelectorAll('#type-chips .chip-toggle').forEach(function (ch) {
+      ch.addEventListener('click', function () {
+        var t = ch.dataset.type;
+        var willBeActive = !state.cfg.types[t];
+        if (!willBeActive) {
+          var anyOther = Object.keys(state.cfg.types).some(function (k) { return k !== t && state.cfg.types[k]; });
+          if (!anyOther) { toast('Debe quedar al menos un tipo activo'); return; }
+        }
+        state.cfg.types[t] = willBeActive;
+        ch.classList.toggle('active', willBeActive);
+        saveCfg();
+        updatePromptPreview();
+      });
+    });
+
+    document.querySelectorAll('#difficulty-seg button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        state.cfg.difficulty = b.dataset.diff;
+        document.querySelectorAll('#difficulty-seg button').forEach(function (x) {
+          x.classList.toggle('active', x === b);
+        });
+        saveCfg();
+        updatePromptPreview();
+      });
+    });
+
+    $('#explicaciones-toggle').addEventListener('change', function () {
+      state.cfg.explicaciones = this.checked;
+      saveCfg();
+      updatePromptPreview();
+    });
+
+    $('#extra-notes').addEventListener('input', function () {
+      state.cfg.notas = this.value;
+      saveCfg();
+      updatePromptPreview();
+    });
   }
 
   function bindEvents() {
@@ -732,7 +899,7 @@
 
     $('#btn-copy-prompt').addEventListener('click', async function () {
       try {
-        await copyText(AI_PROMPT);
+        await copyText(buildPrompt(state.cfg));
         toast('¡Texto copiado!');
       } catch (e) {
         toast('No se pudo copiar automáticamente');
@@ -764,6 +931,10 @@
   }
 
   loadQuizzes();
+  state.cfg = loadCfg();
+  applyCfgToControls();
+  bindCfgEvents();
+  updatePromptPreview();
   buildAiMenu();
   bindEvents();
   renderHome();
