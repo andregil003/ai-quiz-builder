@@ -68,6 +68,7 @@
     L.push('');
     L.push('{');
     L.push('  "nombre": "Título del cuestionario",');
+    L.push('  "categoria": "Categoría temática del cuestionario",');
     L.push('  "preguntas": [');
     L.push(examples.join(',\n'));
     L.push('  ]');
@@ -79,6 +80,7 @@
 
     rule('Devuelve SOLO el objeto JSON válido. Nada más.');
     rule('"nombre": título corto del cuestionario.');
+    rule('"categoria": categoría temática del cuestionario.' + (cfg.category && cfg.category.trim() ? ' Usa EXACTAMENTE esta categoría: "' + cfg.category.trim() + '".' : ' Dedúcela del material (ej: Física, Química, Mate, Redes).'));
     rule('Todas las preguntas van dentro del arreglo "preguntas".');
     if (cfg.types.single || cfg.types.multiple) {
       rule('Tipo "opcion_multiple": campo "opciones" con entre 3 y 6 objetos {texto, correcta}. Usa comillas dobles en todas las claves y valores.');
@@ -157,7 +159,11 @@
     quizzes: [],
     session: null,
     pendingQuiz: null,
-    cfg: defaultCfg
+    cfg: defaultCfg,
+    editingId: null,
+    editDraft: null,
+    editOpen: null,
+    editDirty: false
   };
 
   function loadQuizzes() {
@@ -267,14 +273,14 @@
     });
   }
 
-  var VIEW_TITLES = { home: 'Mis cuestionarios', new: 'Nuevo cuestionario', ai: 'Generar con IA', quiz: '', result: 'Resultados' };
+  var VIEW_TITLES = { home: 'Mis cuestionarios', new: 'Nuevo cuestionario', ai: 'Generar con IA', quiz: '', result: 'Resultados', edit: 'Editar cuestionario' };
 
   function showView(name) {
     document.querySelectorAll('.view').forEach(function (v) { v.classList.remove('active'); });
     var view = $('#view-' + name);
     if (view) view.classList.add('active');
     $('#topbar-title').textContent = VIEW_TITLES[name] || '';
-    var isFlow = name === 'quiz' || name === 'result';
+    var isFlow = name === 'quiz' || name === 'result' || name === 'edit';
     $('#bottomnav').classList.toggle('hidden', isFlow);
     $('#btn-back').classList.toggle('hidden', !isFlow);
     $('#quiz-progress-track').classList.toggle('hidden', name !== 'quiz');
@@ -332,6 +338,9 @@
               '<span>' + (attempts ? attempts + (attempts === 1 ? ' intento' : ' intentos') : 'Sin intentos') + '</span>' +
               (best ? '<span class="badge ok">Mejor: ' + best.score + '/' + quiz.questions.length + '</span>' : '') +
             '</div>' +
+          '</button>' +
+          '<button class="quiz-delete" data-edit="' + quiz.id + '" aria-label="Editar">' +
+            '<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75ZM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75Z"/></svg>' +
           '</button>' +
           '<button class="quiz-delete" data-del="' + quiz.id + '" aria-label="Eliminar">' +
             '<svg viewBox="0 0 24 24"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6ZM19 4h-3.5l-1-1h-5l-1 1H5v2h14Z"/></svg>' +
@@ -421,6 +430,142 @@
     toast('Cuestionario guardado');
     if (startNow) startQuiz(quiz.id);
     else showView('home');
+  }
+
+  function eqTypeLabel(t) {
+    return t === 'blanks' ? 'Completar' : t === 'multiple' ? 'Varias resp.' : 'Opción múltiple';
+  }
+
+  function convertQuestion(q, newType) {
+    if (newType === q.type) return q;
+    if (newType === 'blanks') {
+      return { type: 'blanks', text: q.text || '', options: [], blanks: ['respuesta'], sentenceParts: ['Texto con la ', ' aquí.'], explicacion: q.explicacion || '' };
+    }
+    var opts = [];
+    if (q.type === 'blanks' && q.blanks && q.blanks.length) {
+      q.blanks.forEach(function (b, bi) { opts.push({ key: null, text: b, correct: bi === 0 }); });
+    }
+    while (opts.length < 3) opts.push({ key: null, text: '', correct: false });
+    if (newType === 'multiple' && opts.filter(function (o) { return o.correct; }).length < 2 && opts[1]) opts[1].correct = true;
+    return { type: newType, text: q.text || '', options: opts, blanks: [], sentenceParts: [], explicacion: q.explicacion || '' };
+  }
+
+  function markEditDirty() {
+    state.editDirty = true;
+  }
+
+  function openEditor(id) {
+    var quiz = state.quizzes.find(function (q) { return q.id === id; });
+    if (!quiz) return;
+    state.editingId = id;
+    state.editDraft = JSON.parse(JSON.stringify(quiz.questions));
+    state.editOpen = null;
+    state.editDirty = false;
+    $('#edit-name').value = quiz.name || '';
+    $('#edit-category').value = quizCategory(quiz);
+    renderEditQuestions();
+    showView('edit');
+  }
+
+  function validateDraft() {
+    var qs = state.editDraft;
+    if (!qs.length) return 'El cuestionario no puede quedar sin preguntas.';
+    for (var i = 0; i < qs.length; i++) {
+      var q = qs[i];
+      if (q.type === 'blanks') {
+        if (!q.blanks.length || !q.blanks.some(function (b) { return (b || '').trim(); })) return 'La pregunta ' + (i + 1) + ' no tiene respuestas en la frase.';
+      } else {
+        if (!(q.text || '').trim()) return 'La pregunta ' + (i + 1) + ' no tiene enunciado.';
+        if (q.options.length < 2) return 'La pregunta ' + (i + 1) + ' necesita al menos 2 opciones.';
+        if (q.options.some(function (o) { return !(o.text || '').trim(); })) return 'La pregunta ' + (i + 1) + ' tiene opciones vacías.';
+        if (!q.options.some(function (o) { return o.correct; })) return 'La pregunta ' + (i + 1) + ' no tiene respuesta correcta marcada.';
+      }
+    }
+    return null;
+  }
+
+  function closeEditor(save) {
+    if (save) {
+      if (!state.editingId) return;
+      var err = validateDraft();
+      if (err) { toast(err); return; }
+      var quiz = state.quizzes.find(function (q) { return q.id === state.editingId; });
+      if (quiz) {
+        quiz.name = $('#edit-name').value.trim() || quiz.name;
+        quiz.category = ($('#edit-category').value.trim() || '').trim() || 'General';
+        quiz.questions = state.editDraft;
+        saveQuizzes();
+        toast('Cambios guardados');
+      }
+    } else if (state.editDirty) {
+      if (!confirm('Hay cambios sin guardar. ¿Salir de todas formas?')) return;
+    }
+    state.editingId = null;
+    state.editDraft = null;
+    state.editOpen = null;
+    state.editDirty = false;
+    renderHome();
+    showView('home');
+  }
+
+  function draftFrase(q) {
+    return QuizParser.joinFrase(q.sentenceParts && q.sentenceParts.length ? q.sentenceParts : [''], q.blanks);
+  }
+
+  function renderEditQuestions() {
+    var wrap = $('#edit-questions');
+    var html = '';
+    state.editDraft.forEach(function (q, qi) {
+      var isOpen = state.editOpen === qi;
+      var preview = q.type === 'blanks' ? draftFrase(q) : q.text;
+      html += '<div class="eq-card' + (isOpen ? ' open' : '') + '" data-qi="' + qi + '">' +
+        '<div class="eq-head">' +
+          '<button type="button" class="eq-head-main" data-eq-toggle="' + qi + '">' +
+            '<span class="eq-num">' + (qi + 1) + '</span>' +
+            '<span class="eq-tag">' + eqTypeLabel(q.type) + '</span>' +
+            '<span class="eq-preview">' + esc(preview || '(sin texto)') + '</span>' +
+            '<svg class="eq-chev" viewBox="0 0 24 24"><path d="M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6Z"/></svg>' +
+          '</button>' +
+          '<button type="button" class="eq-del" data-eq-del="' + qi + '" aria-label="Eliminar pregunta">' +
+            '<svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6ZM19 4h-3.5l-1-1h-5l-1 1H5v2h14Z"/></svg>' +
+          '</button>' +
+        '</div>';
+      if (isOpen) {
+        html += '<div class="eq-body">';
+        html += '<span class="eq-label">Tipo de pregunta</span>';
+        html += '<div class="eq-type-seg">';
+        ['single', 'multiple', 'blanks'].forEach(function (t) {
+          html += '<button type="button" data-eq-type="' + t + '"' + (q.type === t ? ' class="active"' : '') + '>' +
+            (t === 'single' ? 'Opción múltiple' : t === 'multiple' ? 'Varias resp.' : 'Completar') + '</button>';
+        });
+        html += '</div>';
+        html += '<label class="eq-label">Enunciado</label><textarea class="eq-textarea" rows="2" data-eq-field="text">' + esc(q.text || '') + '</textarea>';
+        if (q.type === 'blanks') {
+          html += '<label class="eq-label">Frase (respuestas entre [corchetes])</label>' +
+            '<textarea class="eq-textarea" rows="2" data-eq-field="frase">' + esc(draftFrase(q)) + '</textarea>';
+        } else {
+          html += '<span class="eq-label">Opciones (marca la(s) correcta(s))</span>';
+          q.options.forEach(function (op, oi) {
+            html += '<div class="eq-opt">' +
+              '<input type="' + (q.type === 'multiple' ? 'checkbox' : 'radio') + '" name="eq-correct-' + qi + '"' + (op.correct ? ' checked' : '') + ' data-eq-correct="' + oi + '" aria-label="Correcta">' +
+              '<input type="text" class="eq-input" value="' + esc(op.text || '') + '" data-eq-opt-text="' + oi + '" placeholder="Opción ' + (oi + 1) + '">' +
+              '<button type="button" class="eq-opt-remove" data-eq-opt-del="' + oi + '" aria-label="Quitar opción">' +
+                '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19 13H5v-2h14Z"/></svg>' +
+              '</button>' +
+            '</div>';
+          });
+          if (q.options.length < 8) {
+            html += '<button type="button" class="btn btn-ghost btn-sm" data-eq-opt-add>+ Agregar opción</button>';
+          }
+        }
+        if (state.cfg.explicaciones || q.explicacion) {
+          html += '<label class="eq-label">Explicación</label><textarea class="eq-textarea" rows="2" data-eq-field="explicacion" placeholder="Por qué la respuesta es correcta…">' + esc(q.explicacion || '') + '</textarea>';
+        }
+        html += '</div>';
+      }
+      html += '</div>';
+    });
+    wrap.innerHTML = html;
   }
 
   function shuffleArr(arr) {
@@ -994,11 +1139,16 @@
       });
     });
 
-    $('#btn-back').addEventListener('click', exitQuiz);
+    $('#btn-back').addEventListener('click', function () {
+      if ($('#view-edit').classList.contains('active')) { closeEditor(false); return; }
+      exitQuiz();
+    });
 
     $('#quiz-list').addEventListener('click', function (e) {
       var play = e.target.closest('[data-play]');
       if (play) { startQuiz(play.dataset.play); return; }
+      var edit = e.target.closest('[data-edit]');
+      if (edit) { openEditor(edit.dataset.edit); return; }
       var del = e.target.closest('[data-del]');
       if (del) deleteQuiz(del.dataset.del);
     });
@@ -1061,6 +1211,102 @@
       renderHome();
       showView('home');
     });
+
+    $('#edit-name').addEventListener('input', markEditDirty);
+    $('#edit-category').addEventListener('input', markEditDirty);
+    bindAutocomplete('edit-category', 'edit-category-ac');
+
+    $('#btn-edit-save').addEventListener('click', function () { closeEditor(true); });
+    $('#btn-edit-cancel').addEventListener('click', function () { closeEditor(false); });
+    $('#btn-add-question').addEventListener('click', function () {
+      state.editDraft.push({ type: 'single', text: '', options: [{ key: null, text: '', correct: true }, { key: null, text: '', correct: false }, { key: null, text: '', correct: false }], blanks: [], sentenceParts: [] });
+      state.editOpen = state.editDraft.length - 1;
+      markEditDirty();
+      renderEditQuestions();
+      var cards = document.querySelectorAll('.eq-card');
+      if (cards.length) cards[cards.length - 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+
+    var eqWrap = $('#edit-questions');
+    eqWrap.addEventListener('click', function (e) {
+      var tog = e.target.closest('[data-eq-toggle]');
+      if (tog) {
+        var ti = Number(tog.dataset.eqToggle);
+        state.editOpen = state.editOpen === ti ? null : ti;
+        renderEditQuestions();
+        return;
+      }
+      var delQ = e.target.closest('[data-eq-del]');
+      if (delQ) {
+        var di = Number(delQ.dataset.eqDel);
+        state.editDraft.splice(di, 1);
+        if (state.editOpen === di) state.editOpen = null;
+        else if (state.editOpen > di) state.editOpen--;
+        markEditDirty();
+        renderEditQuestions();
+        return;
+      }
+      var card = e.target.closest('.eq-card');
+      if (!card) return;
+      var qi = Number(card.dataset.qi);
+      var q = state.editDraft[qi];
+      var typeBtn = e.target.closest('[data-eq-type]');
+      if (typeBtn) {
+        state.editDraft[qi] = convertQuestion(q, typeBtn.dataset.eqType);
+        markEditDirty();
+        renderEditQuestions();
+        return;
+      }
+      var optAdd = e.target.closest('[data-eq-opt-add]');
+      if (optAdd) {
+        q.options.push({ key: null, text: '', correct: false });
+        markEditDirty();
+        renderEditQuestions();
+        return;
+      }
+      var optDel = e.target.closest('[data-eq-opt-del]');
+      if (optDel) {
+        q.options.splice(Number(optDel.dataset.eqOptDel), 1);
+        markEditDirty();
+        renderEditQuestions();
+      }
+    });
+    eqWrap.addEventListener('change', function (e) {
+      var cor = e.target.closest('[data-eq-correct]');
+      if (!cor) return;
+      var card = e.target.closest('.eq-card');
+      var qi = Number(card.dataset.qi);
+      var oi = Number(cor.dataset.eqCorrect);
+      var q = state.editDraft[qi];
+      if (q.type === 'single') {
+        q.options.forEach(function (op, i) { op.correct = i === oi; });
+      } else {
+        q.options[oi].correct = cor.checked;
+      }
+      markEditDirty();
+    });
+    eqWrap.addEventListener('input', function (e) {
+      var t = e.target;
+      var card = t.closest('.eq-card');
+      if (!card) return;
+      var qi = Number(card.dataset.qi);
+      var q = state.editDraft[qi];
+      if (t.matches('[data-eq-field="text"]')) { q.text = t.value; markEditDirty(); updateEqPreview(card, q); }
+      else if (t.matches('[data-eq-field="frase"]')) {
+        var sf = QuizParser.splitFrase(t.value);
+        q.sentenceParts = sf.parts.length ? sf.parts : [''];
+        q.blanks = sf.blanks;
+        markEditDirty();
+        updateEqPreview(card, q);
+      }
+      else if (t.matches('[data-eq-field="explicacion"]')) { q.explicacion = t.value; markEditDirty(); }
+      else if (t.matches('[data-eq-opt-text]')) { q.options[Number(t.dataset.eqOptText)].text = t.value; markEditDirty(); updateEqPreview(card, q); }
+    });
+  }
+
+  function updateEqPreview(card, q) {
+    var prev = card.querySelector('.eq-preview');
+    if (prev) prev.textContent = (q.type === 'blanks' ? draftFrase(q) : q.text) || '(sin texto)';
   }
 
   function checkAppVersion() {

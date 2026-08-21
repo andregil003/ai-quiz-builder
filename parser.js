@@ -380,12 +380,38 @@
     return parseQuiz(raw);
   }
 
+  function splitFrase(str) {
+    var s = String(str || '');
+    var parts = [];
+    var blanks = [];
+    var re = /\[([^\[\]]+)\]/g;
+    var last = 0, m;
+    while ((m = re.exec(s)) !== null) {
+      parts.push(s.slice(last, m.index));
+      blanks.push(m[1].trim());
+      last = m.index + m[0].length;
+    }
+    parts.push(s.slice(last));
+    return { parts: parts, blanks: blanks };
+  }
+
+  function joinFrase(parts, blanks) {
+    var out = '';
+    for (var i = 0; i < parts.length; i++) {
+      out += parts[i];
+      if (i < parts.length - 1 && i < blanks.length) out += '[' + blanks[i] + ']';
+    }
+    return out;
+  }
+
   global.QuizParser = {
     parseQuiz: parseQuiz,
     parseJsonQuiz: parseJsonQuiz,
     detectAndParse: detectAndParse,
     normalizeAnswer: normalizeAnswer,
-    cleanInline: cleanInline
+    cleanInline: cleanInline,
+    splitFrase: splitFrase,
+    joinFrase: joinFrase
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = global.QuizParser;
