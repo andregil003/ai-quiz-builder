@@ -2,17 +2,28 @@
   'use strict';
 
   var BULLET_RE = /^\s*[*•+-]\s+/;
-  var LETTER_RE = /^([A-Za-z])\s*[.)]\s*/;
+  var ITEM_LETTER_RE = /^\s*[A-Za-z]\s*[.)]\s+\S/;
+  var TEXTO_LABEL_RE = /^\s*\*{0,2}\s*texto\s*:{0,2}/i;
   var BLANK_ITEM_RE = /^\s*BLANK[-_ ]?(\d+)\s*[:\-]?\s*(.*)$/i;
   var CORRECT_RE = /\(\s*correcta/i;
-  var HEADER_RE = /^[ \t]*#{2,4}[^\n]*pregunta\s*\d+/i;
+  var HEADER_RE = /^[ \t]*(?:#{1,4}\s*)?(?:\*\*)?\s*Pregunta\s*\d+(?:\*\*)?\s*:?\s*$/i;
 
   function cleanInline(s) {
-    return String(s || '')
+    return String(s == null ? '' : s)
       .replace(/\r/g, '')
       .replace(/\*\*/g, '')
       .replace(/^\*+|\*+$/g, '')
       .replace(/`/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function normalizeAnswer(s) {
+    return String(s || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9ñ\s]/gi, '')
       .replace(/\s+/g, ' ')
       .trim();
   }
@@ -33,24 +44,15 @@
     return /^\*\*[\s\S]+\*\*$/.test(core);
   }
 
-  function normalizeAnswer(s) {
-    return String(s || '')
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9ñ\s]/gi, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
   function parseOptionLine(raw) {
     var inner = raw.replace(BULLET_RE, '').trim();
     var correct = CORRECT_RE.test(inner);
     var fullBold = isFullBold(inner);
     var text = stripTrailingMarkers(inner).replace(/\*\*/g, '').trim();
+    text = text.replace(/\s*\(\s*correcta[^)]*\)\s*/gi, ' ').replace(/\s+/g, ' ').trim();
     text = text.replace(/[.\s]+$/, '');
     var key = null;
-    var m = text.match(LETTER_RE);
+    var m = text.match(/^([A-Za-z])\s*[.)]\s*/);
     if (m) {
       key = m[1].toUpperCase();
       text = text.slice(m[0].length).trim();
@@ -58,23 +60,33 @@
     return { key: key, text: text, correct: correct || fullBold };
   }
 
-  function parseBlanksSentence(raw) {
-    var inner = raw.replace(BULLET_RE, '').trim();
-    inner = inner.replace(/^\*?\*?\s*texto\s*:?\*?\*?\s*/i, '');
-    var quoted = inner.match(/["\u201c]([\s\S]*)["\u201d]/);
-    if (quoted) inner = quoted[1];
+  function tokenizeBlanks(frase) {
     var parts = [];
     var answers = [];
     var re = /\*\*\[([^\]]+)\]\*\*|\[([^\]]+)\]/g;
-    var last = 0, m;
-    while ((m = re.exec(inner)) !== null) {
-      parts.push(inner.slice(last, m.index));
-      answers.push(m[1] !== undefined ? m[1] : m[2]);
+    var last = 0;
+    var m;
+    while ((m = re.exec(frase)) !== null) {
+      parts.push(frase.slice(last, m.index));
+      answers.push(String(m[1] !== undefined ? m[1] : m[2]).trim());
       last = m.index + m[0].length;
     }
-    parts.push(inner.slice(last));
-    parts = parts.map(function (p) { return p.replace(/\*\*/g, '').trim(); });
-    return { parts: parts, answers: answers };
+    parts.push(frase.slice(last));
+    return { parts: parts.map(function (p) { return p.replace(/\*\*/g, '').trim(); }), answers: answers };
+  }
+
+  function parseBlanksSentence(raw) {
+    var inner = raw.replace(BULLET_RE, '').trim();
+    inner = inner.replace(/^\*{0,2}\s*texto\s*:\s*\*{0,2}\s*/i, '');
+    var quoted = inner.match(/["\u201c]([\s\S]*)["\u201d]/);
+    if (quoted) inner = quoted[1];
+    return tokenizeBlanks(inner);
+  }
+
+  function isItemLine(line) {
+    if (BULLET_RE.test(line)) return true;
+    var t = line.replace(BULLET_RE, '');
+    return ITEM_LETTER_RE.test(t) || BLANK_ITEM_RE.test(t) || TEXTO_LABEL_RE.test(t);
   }
 
   function splitBlocks(text) {
@@ -94,9 +106,20 @@
 
     var chunks = text.split(/^\s*-{3,}\s*$/m);
     for (var j = 0; j < chunks.length; j++) {
-      if (BULLET_RE.test(chunks[j])) blocks.push(chunks[j].split('\n'));
+      if (isItemLine(chunks[j])) blocks.push(chunks[j].split('\n'));
     }
     return blocks;
+  }
+
+  function looksLikeTemplate(q) {
+    if (/enunciado de la pregunta/i.test(q.text)) return true;
+    if (q.options && q.options.length >= 3) {
+      var tmpl = q.options.filter(function (o) {
+        return /^(opción|opcion|respuesta)\s+(incorrecta|correcta)$/i.test(o.text);
+      }).length;
+      if (tmpl >= Math.ceil(q.options.length * 0.6)) return true;
+    }
+    return false;
   }
 
   function parseBlock(lines, index) {
@@ -116,7 +139,7 @@
       var line = lines[i];
       if (!line.trim()) { flushPara(); continue; }
       if (/^\s*-{3,}\s*$/.test(line)) { flushPara(); continue; }
-      if (BULLET_RE.test(line)) {
+      if (isItemLine(line)) {
         flushPara();
         if (!currentGroup) { currentGroup = []; groups.push(currentGroup); }
         currentGroup.push(line);
@@ -137,7 +160,7 @@
       if (hasBlank && !blanksGroup) blanksGroup = grp;
       var lettered = grp.filter(function (l) {
         var t = l.replace(BULLET_RE, '').replace(/\*\*/g, '').trim();
-        return LETTER_RE.test(t);
+        return /^[A-Za-z]\s*[.)]\s*/.test(t);
       }).length;
       if (grp.length >= 2 && lettered >= Math.ceil(grp.length * 0.6)) letteredGroups.push(grp);
     }
@@ -160,29 +183,27 @@
 
     if (!qText && !optionsGroup && !blanksGroup) return null;
 
-    var question = { type: 'single', text: qText || ('Pregunta ' + (index + 1)), context: '', options: [], blanks: [], sentenceParts: [] };
+    var question = { type: 'single', text: qText || ('Pregunta ' + (index + 1)), options: [], blanks: [], sentenceParts: [] };
 
     if (blanksGroup) {
       question.type = 'blanks';
       var blankAnswers = [];
       var sentenceRaw = null;
       for (var b = 0; b < blanksGroup.length; b++) {
-        var bm = blanksGroup[b].replace(BULLET_RE, '').match(BLANK_ITEM_RE);
+        var stripped = blanksGroup[b].replace(BULLET_RE, '');
+        var bm = stripped.match(BLANK_ITEM_RE);
         if (bm) {
           blankAnswers.push({ n: parseInt(bm[1], 10), answer: cleanInline(stripTrailingMarkers(bm[2])).replace(/[.\s]+$/, '') });
-        } else if (/texto/i.test(blanksGroup[b]) || /\[[^\]]+\]/.test(blanksGroup[b])) {
-          sentenceRaw = blanksGroup[b];
+        } else if (TEXTO_LABEL_RE.test(stripped) || /\[[^\]]+\]/.test(stripped)) {
+          sentenceRaw = stripped;
         }
       }
       blankAnswers.sort(function (x, y) { return x.n - y.n; });
-      question.blanks = blankAnswers.map(function (x) { return x.answer; });
+      question.blanks = blankAnswers.map(function (x) { return x.answer; }).filter(Boolean);
       if (sentenceRaw) {
         var parsed = parseBlanksSentence(sentenceRaw);
         question.sentenceParts = parsed.parts;
-        if (parsed.answers.length >= question.blanks.length) question.blanks = parsed.answers;
-      } else {
-        question.sentenceParts = question.blanks.map(function (_, idx2) { return '{' + idx2 + '}'; });
-        question.sentenceParts.unshift('');
+        if (parsed.answers.length > question.blanks.length) question.blanks = parsed.answers;
       }
       if (!question.blanks.length) return null;
       return question;
@@ -195,23 +216,33 @@
       if (!opt.text) continue;
       question.options.push(opt);
     }
-    if (question.options.length < 2) {
-      if (question.options.length === 1) question.options[0].correct = true;
-      else return null;
-    }
+    if (!question.options.length) return null;
+    if (question.options.length === 1) question.options[0].correct = true;
 
     var correctCount = question.options.filter(function (op) { return op.correct; }).length;
-    if (correctCount === 0 && question.options.length === 1) question.options[0].correct = true;
     question.type = correctCount > 1 ? 'multiple' : 'single';
     return question;
   }
 
-  function parseQuiz(raw) {
+  function sliceToLastQuizName(text) {
+    var re = /^\s*Nombre del cuestionario\s*[:\-–]/gim;
+    var lastIdx = -1;
+    var m;
+    while ((m = re.exec(text)) !== null) lastIdx = m.index;
+    return lastIdx > -1 ? text.slice(lastIdx) : text;
+  }
+
+  function parseQuiz(rawInput) {
     var warnings = [];
-    var text = String(raw || '').replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ');
+    var text = String(rawInput || '').replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ');
+    text = sliceToLastQuizName(text);
+
     var name = '';
     var nameMatch = text.match(/nombre\s+del\s+cuestionario\s*[:\-–]\s*(.+)/i);
-    if (nameMatch) name = cleanInline(nameMatch[1]);
+    if (nameMatch) {
+      name = cleanInline(nameMatch[1]);
+      if (/^t[íi]tulo del cuestionario$/i.test(name)) name = '';
+    }
 
     var blocks = splitBlocks(text);
     var questions = [];
@@ -219,11 +250,10 @@
     for (var i = 0; i < blocks.length; i++) {
       var q = parseBlock(blocks[i], questions.length);
       if (!q) continue;
+      if (looksLikeTemplate(q)) continue;
       if (q.type !== 'blanks') {
         var cc = q.options.filter(function (op) { return op.correct; }).length;
         if (cc === 0) warnings.push('Pregunta ' + (questions.length + 1) + ': sin respuesta marcada como correcta.');
-      } else if (!q.sentenceParts.length) {
-        warnings.push('Pregunta ' + (questions.length + 1) + ': texto de completar espacios no detectado.');
       }
       questions.push(q);
     }
@@ -234,8 +264,99 @@
     return { name: name, questions: questions, warnings: warnings };
   }
 
+  function extractJson(raw) {
+    var text = String(raw || '').trim();
+    var fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fence && fence[1].trim()) text = fence[1].trim();
+    var attempts = [];
+    var s = text.indexOf('{');
+    var e = text.lastIndexOf('}');
+    if (s !== -1 && e > s) attempts.push(text.slice(s, e + 1));
+    s = text.indexOf('[');
+    e = text.lastIndexOf(']');
+    if (s !== -1 && e > s) attempts.push(text.slice(s, e + 1));
+    for (var i = 0; i < attempts.length; i++) {
+      try { return JSON.parse(attempts[i]); } catch (err) { /* next */ }
+    }
+    return null;
+  }
+
+  function parseJsonQuiz(raw) {
+    var data = extractJson(raw);
+    if (!data || typeof data !== 'object') return null;
+    var arr = Array.isArray(data) ? data : (Array.isArray(data.preguntas) ? data.preguntas : null);
+    if (!arr) return null;
+
+    var warnings = [];
+    var questions = [];
+
+    arr.forEach(function (it, idx) {
+      if (!it || typeof it !== 'object' || Array.isArray(it)) {
+        warnings.push('Ítem ' + (idx + 1) + ': formato inválido, se omitió.');
+        return;
+      }
+      var enun = cleanInline(it.enunciado != null ? it.enunciado : (it.pregunta != null ? it.pregunta : (it.texto != null ? it.texto : '')));
+      var tipo = String(it.tipo == null ? '' : it.tipo).toLowerCase();
+      var resp = it.respuestas || it.blanks || it.espacios;
+      var frase = it.frase != null ? it.frase : (it.oracion != null ? it.oracion : '');
+      var isBlanks = tipo.indexOf('complet') !== -1 || tipo === 'blanks' || tipo === 'blank' || ((!tipo || tipo === 'completar') && (resp || frase));
+
+      if (isBlanks) {
+        var tok = tokenizeBlanks(String(frase).replace(/\*\*/g, ''));
+        var answers = Array.isArray(resp) ? resp.map(function (x) { return cleanInline(x); }).filter(Boolean) : [];
+        if (!answers.length) answers = tok.answers.slice();
+        else if (tok.answers.length > answers.length) answers = tok.answers;
+        if (!answers.length) {
+          warnings.push('Pregunta ' + (questions.length + 1) + ': completar espacios sin respuestas, se omitió.');
+          return;
+        }
+        questions.push({
+          type: 'blanks',
+          text: enun,
+          options: [],
+          blanks: answers,
+          sentenceParts: tok.parts.length > 1 ? tok.parts : []
+        });
+        return;
+      }
+
+      var optsIn = it.opciones || it.alternativas;
+      if (!Array.isArray(optsIn) || optsIn.length < 2) {
+        warnings.push('Pregunta ' + (questions.length + 1) + ': opciones insuficientes, se omitió.');
+        return;
+      }
+      var opts = [];
+      optsIn.forEach(function (o) {
+        var t = (o && typeof o === 'object') ? cleanInline(o.texto != null ? o.texto : (o.text != null ? o.text : '')) : cleanInline(o);
+        var c = (o && typeof o === 'object') ? (o.correcta === true || o.correct === true || o.es_correcta === true) : false;
+        if (t) opts.push({ key: null, text: t, correct: c });
+      });
+      if (opts.length < 2) {
+        warnings.push('Pregunta ' + (questions.length + 1) + ': opciones vacías, se omitió.');
+        return;
+      }
+      var cc = opts.filter(function (o) { return o.correct; }).length;
+      if (cc === 0) {
+        warnings.push('Pregunta ' + (questions.length + 1) + ': sin respuesta correcta marcada.');
+      }
+      questions.push({ type: cc > 1 ? 'multiple' : 'single', text: enun || ('Pregunta ' + (questions.length + 1)), options: opts, blanks: [], sentenceParts: [] });
+    });
+
+    var name = cleanInline(data.nombre || data.titulo || data.title || '') || 'Cuestionario sin título';
+    if (!questions.length) warnings.push('El JSON no contenía preguntas válidas.');
+    return { name: name, questions: questions, warnings: warnings };
+  }
+
+  function detectAndParse(raw) {
+    var j = parseJsonQuiz(raw);
+    if (j && j.questions.length) return j;
+    return parseQuiz(raw);
+  }
+
   global.QuizParser = {
     parseQuiz: parseQuiz,
+    parseJsonQuiz: parseJsonQuiz,
+    detectAndParse: detectAndParse,
     normalizeAnswer: normalizeAnswer,
     cleanInline: cleanInline
   };

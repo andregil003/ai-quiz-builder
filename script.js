@@ -12,55 +12,45 @@
   ];
 
   var AI_PROMPT = [
-    'Actúa como un creador experto de cuestionarios de estudio. Voy a darte material de estudio y debes generar un cuestionario de opción múltiple siguiendo EXACTAMENTE este formato de salida. No escribas introducciones, despedidas ni explicaciones: SOLO el cuestionario.',
+    'Actúa como un creador experto de cuestionarios de estudio. Voy a darte material de estudio y debes generar un cuestionario de opción múltiple devuelto EXCLUSIVAMENTE como JSON válido.',
     '',
-    'FORMATO DE SALIDA (ejemplo):',
+    'TU RESPUESTA DEBE SER: únicamente el objeto JSON, empezando con { y terminando con }. Sin explicaciones, sin introducciones, sin despedidas, sin texto antes ni después.',
     '',
-    'Nombre del cuestionario : Título del cuestionario',
-    '### **Pregunta 1**',
+    'ESQUEMA EXACTO (ejemplo de estructura):',
     '',
-    '**1.1 Enunciado de la pregunta en negrita:**',
-    '',
-    '* A. Opción incorrecta',
-    '* **B. Opción correcta** *(Correcta)*',
-    '* C. Opción incorrecta',
-    '* D. Opción incorrecta',
-    '',
-    '---',
-    '',
-    '### **Pregunta 2**',
-    '',
-    '**2.1 Pregunta con VARIAS respuestas correctas:**',
-    '',
-    '* **A. Respuesta correcta** *(Correcta)*',
-    '* B. Opción incorrecta',
-    '* **C. Respuesta correcta** *(Correcta)*',
-    '',
-    '---',
-    '',
-    '### **Pregunta 3**',
-    '',
-    '**3.1 Complete los espacios en blanco:**',
-    '',
-    '* **Texto:** "Frase con las **[palabra1]** a completar y otra **[palabra2]**."',
-    '* BLANK-1: **palabra1**',
-    '* BLANK-2: **palabra2**',
-    '',
-    '---',
+    '{',
+    '  "nombre": "Título del cuestionario",',
+    '  "preguntas": [',
+    '    {',
+    '      "tipo": "opcion_multiple",',
+    '      "enunciado": "Enunciado de la pregunta",',
+    '      "opciones": [',
+    '        { "texto": "Opción incorrecta", "correcta": false },',
+    '        { "texto": "Opción correcta", "correcta": true },',
+    '        { "texto": "Otra opción incorrecta", "correcta": false }',
+    '      ]',
+    '    },',
+    '    {',
+    '      "tipo": "completar",',
+    '      "enunciado": "Complete los espacios en blanco:",',
+    '      "frase": "Frase con la [palabra1] a completar y otra [palabra2].",',
+    '      "respuestas": ["palabra1", "palabra2"]',
+    '    }',
+    '  ]',
+    '}',
     '',
     'REGLAS OBLIGATORIAS:',
-    '1. La primera línea debe ser exactamente: "Nombre del cuestionario : <título>".',
-    '2. Cada pregunta inicia con el encabezado: ### **Pregunta N** (N consecutivo desde 1).',
-    '3. El enunciado va en una sola línea envuelto en **negrita**.',
-    '4. Cada opción va en su propia línea empezando con "* " seguido de letra mayúscula y punto (A. B. C. ...).',
-    '5. TODA respuesta correcta debe estar envuelta en **negrita** Y terminar con *(Correcta)*.',
-    '6. Si una pregunta tiene varias respuestas correctas, márcalas TODAS con la regla anterior.',
-    '7. Entre pregunta y pregunta incluye una línea solo con: ---',
-    '8. Para preguntas de completar espacios usa el formato del ejemplo (línea **Texto:** con las respuestas entre corchetes y negrita, y luego BLANK-1, BLANK-2... con cada respuesta).',
-    '9. Incluye una mezcla de preguntas: mayoría de opción múltiple con 1 respuesta correcta, varias con 2 o más respuestas correctas, y 2 o 3 de completar espacios.',
-    '10. Genera entre 15 y 40 preguntas cubriendo TODO el material de forma equilibrada.',
-    '11. Las opciones incorrectas deben ser plausibles y coherentes con el material.',
-    '12. NO uses tablas, imágenes ni formato distinto al indicado.',
+    '1. Devuelve SOLO el objeto JSON válido. Nada más.',
+    '2. "nombre": título corto del cuestionario.',
+    '3. Todas las preguntas van dentro del arreglo "preguntas".',
+    '4. Tipo "opcion_multiple": campo "opciones" con entre 3 y 6 objetos {texto, correcta}. Usa comillas dobles en todas las claves y valores.',
+    '5. Preguntas de una sola respuesta correcta: exactamente una opción con "correcta": true.',
+    '6. Preguntas de varias respuestas correctas: dos o más opciones con "correcta": true.',
+    '7. Tipo "completar": la "frase" contiene las respuestas entre corchetes [así], y el arreglo "respuestas" lista cada respuesta en el MISMO orden, sin corchetes.',
+    '8. Mezcla los tipos: mayoría de opción múltiple con 1 sola correcta, varias con 2 o más correctas, y 2 o 3 de completar espacios.',
+    '9. Genera entre 15 y 40 preguntas cubriendo TODO el material de forma equilibrada.',
+    '10. Los distractores deben ser plausibles y coherentes con el material.',
+    '11. No agregues comentarios, ni claves fuera del esquema, ni bloques de código markdown.',
     '',
     'MATERIAL DE ESTUDIO:',
     '[PEGA AQUÍ TU MATERIAL O ADJUNTA LOS ARCHIVOS]'
@@ -223,7 +213,7 @@
   function handleParse() {
     var text = $('#paste-area').value;
     if (!text.trim()) { toast('Sube un archivo o pega el texto primero'); return; }
-    var parsed = QuizParser.parseQuiz(text);
+    var parsed = QuizParser.detectAndParse(text);
     if (!parsed.questions.length) {
       toast('No se detectaron preguntas válidas');
       $('#preview-panel').classList.add('hidden');
@@ -306,13 +296,15 @@
 
     if (q.type === 'blanks') {
       html += '<div class="blanks-sentence">';
-      var parts = q.sentenceParts && q.sentenceParts.length ? q.sentenceParts : [''].concat(q.blanks.map(function (_, x) { return '{' + x + '}'; }));
-      parts.forEach(function (p, pi) {
-        html += rich(p);
-        if (pi < q.blanks.length) {
-          html += '<input type="text" class="blank-input" data-blank="' + pi + '" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Espacio ' + (pi + 1) + '">';
+      var segs = q.sentenceParts && q.sentenceParts.length ? q.sentenceParts : [''];
+      var total = Math.max(segs.length - 1, q.blanks.length);
+      for (var si = 0; si < total; si++) {
+        html += rich(si < segs.length ? segs[si] : '');
+        if (si < q.blanks.length) {
+          html += '<input type="text" class="blank-input" data-blank="' + si + '" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Espacio ' + (si + 1) + '">';
         }
-      });
+      }
+      html += rich(total < segs.length ? segs[total] : '');
       html += '</div>';
     } else {
       html += '<ul class="options">';
