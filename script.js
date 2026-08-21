@@ -781,9 +781,21 @@
     var dd = $('#ai-dropdown');
     var menu = $('#ai-menu');
     var open = force !== undefined ? force : menu.classList.contains('hidden');
+    menu.classList.remove('open-up');
     menu.classList.toggle('hidden', !open);
     dd.classList.toggle('open', open);
     $('#ai-toggle').setAttribute('aria-expanded', String(open));
+    if (open) {
+      var navH = $('#bottomnav').offsetHeight || 64;
+      var limit = window.innerHeight - navH - 12;
+      if (menu.getBoundingClientRect().bottom > limit) {
+        menu.classList.add('open-up');
+      }
+      var r2 = menu.getBoundingClientRect();
+      if (r2.top < 8 || r2.bottom > window.innerHeight) {
+        menu.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    }
   }
 
   async function copyPromptAndOpen(url, aiName) {
