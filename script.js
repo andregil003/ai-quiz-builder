@@ -435,12 +435,21 @@
       if (q.type !== 'blanks') {
         card.querySelectorAll('.option').forEach(function (label) {
           var oi = parseInt(label.dataset.opt, 10);
-          if (s.answers[i].has(oi)) label.classList.add('selected');
+          var isSelected = s.answers[i].has(oi);
+          label.classList.toggle('selected', isSelected);
+          var inp = label.querySelector('input');
+          if (inp) inp.checked = isSelected;
         });
       }
     }
 
-    if (checked || revealed) applyFeedbackStyles();
+    if (checked || revealed) {
+      applyFeedbackStyles();
+    } else {
+      var fbox = $('#feedback-box');
+      fbox.classList.add('hidden');
+      fbox.innerHTML = '';
+    }
 
     updateActionButtons();
     updateNavButtons();
@@ -507,9 +516,10 @@
   function isCorrectAnswer(q, ans) {
     if (q.type === 'blanks') {
       return q.blanks.every(function (b, bi) {
-        return QuizParser.normalizeAnswer(ans[bi] || '') === QuizParser.normalizeAnswer(b);
+        return QuizParser.normalizeAnswer((ans && ans[bi]) || '') === QuizParser.normalizeAnswer(b);
       });
     }
+    if (!ans || typeof ans.size !== 'number') return false;
     var correctSet = new Set();
     q.options.forEach(function (op, oi) { if (op.correct) correctSet.add(oi); });
     if (correctSet.size !== ans.size) return false;
