@@ -335,19 +335,26 @@ textarea:focus, input[type="text"]:focus { outline: none; border-color: var(--ac
 .cfg-title { font-size: 16px; font-weight: 800; margin-bottom: 4px; }
 
 .stepper {
-  display: flex; align-items: stretch; gap: 8px;
+  display: flex; align-items: center;
+  background: var(--grad);
+  border-radius: 14px;
+  padding: 5px;
+  box-shadow: 0 8px 22px rgba(124, 108, 246, .3);
 }
 .stepper button {
-  width: 54px; min-height: 48px; border-radius: 13px;
-  background: var(--card-2); border: 1px solid var(--border);
-  font-size: 24px; font-weight: 800; color: var(--text);
+  width: 52px; height: 44px; border-radius: 10px;
+  background: rgba(255, 255, 255, .16);
+  font-size: 26px; font-weight: 800; color: #fff; line-height: 1;
   display: inline-flex; align-items: center; justify-content: center;
+  transition: background .15s ease, transform .08s ease;
 }
-.stepper button:active { background: var(--accent); color: #fff; }
+.stepper button:active { background: rgba(255, 255, 255, .32); transform: scale(.94); }
 .stepper input {
-  flex: 1; text-align: center; font-size: 18px; font-weight: 800;
-  min-height: 48px;
+  flex: 1; min-width: 0; text-align: center;
+  font-size: 19px; font-weight: 800; color: #fff;
+  background: transparent; border: none; height: 44px; padding: 0 4px;
 }
+.stepper input:focus { outline: none; }
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
